@@ -4,6 +4,11 @@ This repo implements a modular ML trading strategy workflow inspired by the Chap
 
 As shown in the book, it works. But profitability is only realistic with very low fees (below 0.5 bps); this is generally not achievable for taker trading, but the short-term 1-min signal could be used, for example, as alpha for a high frequency market-making model that relies on limit maker orders (very low fees, sometimes rebates).
 
+<figure>
+  <img src="plot/ALL_1m_equity_q5000_longshort_5000_date.png" alt="ALL 1m equity curve (q5000 longshort, date scope)" width="700">
+  <figcaption>Equity curve for the q5000 longshort setup, averaged across symbols (date scope).</figcaption>
+</figure>
+
 ## Requirements
 
 - Python 3.10+
@@ -173,12 +178,7 @@ The pipeline persists intermediate outputs so you can resume after a restart:
 
 When training on multiple symbols, `{symbol}` is `ALL` for the features, predictions, and model directory.
 
-## Example Plots
-
-<figure>
-  <img src="plot/ALL_1m_equity_q5000_longshort_5000_date.png" alt="ALL 1m equity curve (q5000 longshort, date scope)" width="700">
-  <figcaption>Equity curve for the q5000 longshort setup, averaged across symbols (date scope).</figcaption>
-</figure>
+## Alpha Plots
 
 <figure>
   <img src="plot/ALL_1m_alpha_q5000_longshort_5000_date.png" alt="ALL 1m alpha factor (q5000 longshort, date scope)" width="700">
