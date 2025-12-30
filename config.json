@@ -1,0 +1,20 @@
+{
+    "candle_interval": "1m",
+    "request_delay": 0.3,
+    "train_symbols": ["BTCUSDT", "XRPUSDT"],
+    "inference_symbol": "BTCUSDT",
+    "start_date": "2018-01-01",
+    "feather_dir": "data/feather",
+    "binance_base_url": "https://fapi.binance.com",
+    "max_klines_per_request": 1500,
+    "feature_flags": {
+        "returns": true,
+        "bop": true,
+        "cci": true,
+        "mfi": true,
+        "rsi": true,
+        "stochrsi": true,
+        "stoch": true,
+        "natr": true
+    }
+}

@@ -1,0 +1,7 @@
+lightgbm
+pandas
+numpy
+scipy
+aiohttp
+pyarrow
+matplotlib
