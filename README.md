@@ -1,6 +1,8 @@
 # Boosting 1-Min Strategy
 
-This repo implements a modular intraday ML workflow inspired by "Boosting Your Trading Strategy" (Chapter 12). The pipeline is split into independent stages so you can run only what you need: download data, build features, train models (with persistence), evaluate signals, and backtest a chosen quantile.
+This repo implements a modular intraday ML workflow inspired by Chapter 12 of "Machine Learning for Algorithmic Trading" by Stefan Jansen. The pipeline is split into independent stages so you can run only what you need: download data, build features, train models (with persistence), evaluate signals, and backtest a chosen quantile.
+
+Profitability is only realistic with very low fees (below 0.5 bps); this is generally not achievable for taker trading, but the short-term signal can be used as alpha for a market-making model that relies on limit maker orders (very low fees, sometimes rebates).
 
 ## Requirements
 
@@ -170,6 +172,18 @@ The pipeline persists intermediate outputs so you can resume after a restart:
 - Alpha factor plot: `plot/{symbol}_{interval}_alpha_{rule}_{bins}_{scope}.png`
 
 When training on multiple symbols, `{symbol}` is `ALL` for the features, predictions, and model directory.
+
+## Example Plots
+
+<figure>
+  <img src="plot/ALL_1m_equity_q5000_longshort_5000_date.png" alt="ALL 1m equity curve (q5000 longshort, date scope)" width="700">
+  <figcaption>Equity curve for the q5000 longshort setup, averaged across symbols (date scope).</figcaption>
+</figure>
+
+<figure>
+  <img src="plot/ALL_1m_alpha_q5000_longshort_5000_date.png" alt="ALL 1m alpha factor (q5000 longshort, date scope)" width="700">
+  <figcaption>Alpha factor derived from the standardized signal for the same backtest run.</figcaption>
+</figure>
 
 ## Notes
 
