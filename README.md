@@ -2,7 +2,7 @@
 
 This repo implements a modular ML trading strategy workflow inspired by the Chapter 12 of "Machine Learning for Algorithmic Trading" by Stefan Jansen. The pipeline is split into independent stages so you can run only what you need: download data, build features, train models (with persistence), evaluate signals, and backtest a chosen quantile.
 
-As shown in the book, it works. But profitability is only realistic with very low fees (below 0.5 bps); this is generally not achievable for taker trading, but the short-term 1-min signal can be used as alpha for a high frequency market-making model that relies on limit maker orders (very low fees, sometimes rebates).
+As shown in the book, it works. But profitability is only realistic with very low fees (below 0.5 bps); this is generally not achievable for taker trading, but the short-term 1-min signal could be used, for example, as alpha for a high frequency market-making model that relies on limit maker orders (very low fees, sometimes rebates).
 
 ## Requirements
 
