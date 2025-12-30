@@ -6,7 +6,7 @@ As shown in the book, it works. But profitability is only realistic with very lo
 
 <figure>
   <img src="plot/ALL_1m_equity_q5000_longshort_5000_date.png" alt="ALL 1m equity curve (q5000 longshort, date scope)" width="700">
-  <figcaption>Equity curve for the q5000 longshort setup, averaged across symbols (date scope).</figcaption>
+  <figcaption>Equity curve for the q5000 longshort setup.</figcaption>
 </figure>
 
 ## Requirements
