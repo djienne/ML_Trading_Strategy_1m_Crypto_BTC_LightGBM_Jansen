@@ -182,7 +182,7 @@ When training on multiple symbols, `{symbol}` is `ALL` for the features, predict
 
 <figure>
   <img src="plot/ALL_1m_alpha_q5000_longshort_5000_date.png" alt="ALL 1m alpha factor (q5000 longshort, date scope)" width="700">
-  <figcaption>Alpha factor derived from the standardized signal for the same backtest run.</figcaption>
+  <figcaption>Alpha factor derived from the standardized signal.</figcaption>
 </figure>
 
 ## Notes
