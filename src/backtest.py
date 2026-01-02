@@ -229,7 +229,9 @@ def backtest(
 
     if plot_path:
         prefix = f"{plot_label} " if plot_label else ""
-        plot_title = f"{prefix}Equity Curve ({rule}, bins={bins}, scope={scope_used})"
+        plot_title = (
+            f"{prefix}Equity Curve ({rule}, bins={bins}, scope={scope_used}, fee={fee:.3%})"
+        )
         plot_equity_curve(minute_perf, plot_path, title=plot_title)
 
     if alpha_plot_path:
