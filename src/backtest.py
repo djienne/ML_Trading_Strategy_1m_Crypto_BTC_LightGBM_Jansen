@@ -1,13 +1,14 @@
+import math
 import os
 
 import numpy as np
 import pandas as pd
 
 from src.evaluation import add_quantile_labels
-from src.utils import get_symbol_key, resolve_quantile_scope
+from src.utils import estimate_bar_minutes, get_symbol_key, interval_to_minutes, resolve_quantile_scope
 
-ALPHA_WINDOW = "1D"
-ALPHA_MIN_PERIODS = 60
+ALPHA_WINDOW_DAYS = 1
+ALPHA_MIN_PERIODS_MINUTES = 60
 ALPHA_SCALE = 0.01
 
 
@@ -37,7 +38,20 @@ def plot_equity_curve(minute_perf, output_path, title=None):
     print(f"Saved equity curve plot: {output_path}")
 
 
-def compute_alpha_factor(predictions, window=ALPHA_WINDOW, min_periods=ALPHA_MIN_PERIODS):
+def resolve_alpha_params(interval, bar_type, index):
+    if bar_type == "volume":
+        interval_minutes = estimate_bar_minutes(index) or interval_to_minutes(interval)
+    else:
+        interval_minutes = interval_to_minutes(interval)
+    bars_per_day = 1440 / interval_minutes
+    window = max(1, int(math.ceil(ALPHA_WINDOW_DAYS * bars_per_day)))
+    min_periods = max(1, int(math.ceil(ALPHA_MIN_PERIODS_MINUTES / interval_minutes)))
+    min_periods = min(min_periods, window)
+    label = f"{window} bar" if window == 1 else f"{window} bars"
+    return window, min_periods, label
+
+
+def compute_alpha_factor(predictions, window, min_periods):
     if predictions is None or predictions.empty:
         return pd.Series(dtype=float)
 
@@ -86,6 +100,8 @@ def backtest(
     target_quantile=None,
     side="auto",
     quantile_scope="auto",
+    interval="1m",
+    bar_type="time",
     plot_path=None,
     plot_label=None,
     alpha_plot_path=None,
@@ -96,7 +112,12 @@ def backtest(
         return
 
     symbol_count = pd.Index(get_symbol_key(predictions.index)).nunique()
-    scope_used = resolve_quantile_scope(quantile_scope, symbol_count)
+    scope_used = resolve_quantile_scope(
+        quantile_scope,
+        symbol_count,
+        interval=interval,
+        bar_type=bar_type,
+    )
 
     resolved_side = side
     opposite_quantile = None
@@ -107,15 +128,22 @@ def backtest(
             resolved_side = "long" if target_quantile > bins / 2 else "short"
         if resolved_side == "longshort":
             opposite_quantile = bins - target_quantile + 1
-            if opposite_quantile == target_quantile:
-                rule = f"quantile {target_quantile} (long; opposite quantile is same)"
+            if opposite_quantile >= target_quantile:
+                rule = f"quantile >= {target_quantile} long (short leg skipped; overlap)"
             else:
-                rule = f"quantile {target_quantile} long / {opposite_quantile} short"
+                rule = f"quantile >= {target_quantile} long / <= {opposite_quantile} short"
         else:
-            rule = f"quantile {target_quantile} ({resolved_side})"
+            comparator = ">=" if resolved_side == "long" else "<="
+            rule = f"quantile {comparator} {target_quantile} ({resolved_side})"
     print(f"Signal setup: scope={scope_used}, bins={bins}, rule={rule}.")
 
-    predictions = add_quantile_labels(predictions, bins=bins, scope=scope_used)
+    predictions = add_quantile_labels(
+        predictions,
+        bins=bins,
+        scope=scope_used,
+        interval=interval,
+        bar_type=bar_type,
+    )
     if predictions.empty:
         print("No valid predictions to backtest after dropping NaNs.")
         return
@@ -127,15 +155,15 @@ def backtest(
         predictions.loc[predictions["quantile"] == 1, "signal"] = -1
     else:
         if resolved_side == "long":
-            predictions.loc[predictions["quantile"] == target_quantile, "signal"] = 1
+            predictions.loc[predictions["quantile"] >= target_quantile, "signal"] = 1
         elif resolved_side == "short":
-            predictions.loc[predictions["quantile"] == target_quantile, "signal"] = -1
+            predictions.loc[predictions["quantile"] <= target_quantile, "signal"] = -1
         elif resolved_side == "longshort":
-            predictions.loc[predictions["quantile"] == target_quantile, "signal"] = 1
-            if opposite_quantile == target_quantile:
-                print("Warning: opposite quantile equals target; short leg skipped.")
+            predictions.loc[predictions["quantile"] >= target_quantile, "signal"] = 1
+            if opposite_quantile is None or opposite_quantile >= target_quantile:
+                print("Warning: opposite quantile overlaps target; short leg skipped.")
             else:
-                predictions.loc[predictions["quantile"] == opposite_quantile, "signal"] = -1
+                predictions.loc[predictions["quantile"] <= opposite_quantile, "signal"] = -1
         else:
             raise ValueError(f"Unsupported side: {resolved_side}")
 
@@ -148,8 +176,11 @@ def backtest(
     predictions["strategy_net"] = predictions["strategy_gross"] - predictions["costs"]
 
     alpha_series = None
-    alpha_window = ALPHA_WINDOW
-    alpha_min_periods = ALPHA_MIN_PERIODS
+    alpha_window, alpha_min_periods, alpha_window_label = resolve_alpha_params(
+        interval,
+        bar_type,
+        predictions.index,
+    )
     if alpha_plot_path:
         alpha_series = compute_alpha_factor(
             predictions,
@@ -168,10 +199,15 @@ def backtest(
 
     net_std = minute_perf["strategy_net"].std()
     if net_std == 0 or net_std != net_std:
-        minute_sharpe = 0.0
+        bar_sharpe = 0.0
     else:
-        minute_sharpe = minute_perf["strategy_net"].mean() / net_std
-    annual_sharpe = minute_sharpe * (525600**0.5)
+        bar_sharpe = minute_perf["strategy_net"].mean() / net_std
+    if bar_type == "volume":
+        interval_minutes = estimate_bar_minutes(predictions.index) or interval_to_minutes(interval)
+    else:
+        interval_minutes = interval_to_minutes(interval)
+    bars_per_year = 525600 / interval_minutes
+    annual_sharpe = bar_sharpe * (bars_per_year**0.5)
 
     print("-" * 30)
     print(f"Backtest Results ({minute_perf.index.min()} to {minute_perf.index.max()})")
@@ -185,7 +221,7 @@ def backtest(
 
     if total_return_net < -0.9:
         print("\nNote: The strategy lost most of its capital due to fees.")
-        print("This is expected for a 1-minute strategy with 0.1% fees per trade.")
+        print("This is expected for a 1-bar strategy with 0.1% fees per trade.")
         print(
             "To make this profitable, fees must be negligible (e.g. maker rebates) "
             "or signal alpha much higher."
@@ -199,6 +235,6 @@ def backtest(
     if alpha_plot_path:
         prefix = f"{plot_label} " if plot_label else ""
         alpha_title = (
-            f"{prefix}Alpha Factor ({rule}, window={alpha_window}, scope={scope_used})"
+            f"{prefix}Alpha Factor ({rule}, window={alpha_window_label}, scope={scope_used})"
         )
         plot_alpha_factor(alpha_series, alpha_plot_path, title=alpha_title)

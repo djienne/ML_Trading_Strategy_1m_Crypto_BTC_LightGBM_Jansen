@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from src.utils import get_symbol_key
+from src.utils import estimate_bar_minutes, get_symbol_key, interval_to_minutes
 
 
 def ic_lgbm(preds, train_data):
@@ -15,11 +15,19 @@ def ic_lgbm(preds, train_data):
     return "ic", ic, True
 
 
-def train_and_predict(data, model_dir=None, resume=False, continue_rounds=50):
+def train_and_predict(
+    data,
+    interval="1m",
+    bar_type="time",
+    model_dir=None,
+    resume=False,
+    boost_rounds=250,
+    continue_rounds=50,
+):
     print("Starting model training (rolling window)...")
     data = data.sort_index()
 
-    target_col = "fwd1min"
+    target_col = "fwd1bar"
     if target_col not in data.columns:
         raise ValueError(f"Missing target column: {target_col}")
 
@@ -45,19 +53,23 @@ def train_and_predict(data, model_dir=None, resume=False, continue_rounds=50):
         verbose=-1,
         seed=42,
     )
-    num_boost_round = 250
+    num_boost_round = boost_rounds
 
-    # Rolling window setup: Train 12 months, Test 1 month (24/7 crypto)
-    day = 24 * 60
+    # Rolling window setup: Train 12 months, Test 1 month (24/7 crypto).
+    if bar_type == "volume":
+        interval_minutes = estimate_bar_minutes(data.index) or interval_to_minutes(interval)
+    else:
+        interval_minutes = interval_to_minutes(interval)
+    bars_per_day = 1440 / interval_minutes
     month = 30
-    train_len = 12 * month * day
-    test_len = month * day
+    train_len = max(1, int(round(12 * month * bars_per_day)))
+    test_len = max(1, int(round(month * bars_per_day)))
     lookahead = 1
 
     total_rows = len(data)
     min_required = train_len + test_len + lookahead
     if total_rows < min_required:
-        print("Warning: Insufficient data for 12m train + 1m test.")
+        print("Warning: Insufficient data for 12-month train + 1-month test.")
         print(f"Data length: {total_rows}, Required: {min_required}")
         print("Adjusting split to 80% train / 20% test for demonstration.")
 

@@ -1,16 +1,16 @@
 import argparse
 import warnings
 
-from src.config_io import load_config, resolve_paths
+from src.config_io import load_config, resolve_bar_id, resolve_paths
 from src.pipeline import run_backtest, run_download, run_evaluate, run_features, run_train
-from src.utils import get_inference_symbol, get_train_symbols
+from src.utils import get_inference_symbol, get_train_symbols, resolve_bar_type
 
 
 warnings.filterwarnings("ignore")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Boosting 1-min strategy pipeline")
+    parser = argparse.ArgumentParser(description="Boosting bar-based strategy pipeline")
     parser.add_argument("--config", default="config.json", help="Path to config.json")
 
     subparsers = parser.add_subparsers(dest="command")
@@ -32,6 +32,12 @@ def main():
     train_parser.add_argument("--symbol", help="Override symbol")
     train_parser.add_argument("--interval", help="Override interval")
     train_parser.add_argument("--retrain", action="store_true", help="Retrain from scratch")
+    train_parser.add_argument(
+        "--boost-rounds",
+        type=int,
+        default=250,
+        help="Boosting rounds per fold for fresh training",
+    )
     train_scope = train_parser.add_mutually_exclusive_group()
     train_scope.add_argument("--all", action="store_true", default=True, help="Train on all symbols (default)")
     train_scope.add_argument("--single", action="store_true", help="Train on the target symbol only")
@@ -57,7 +63,11 @@ def main():
     backtest_parser.add_argument("--symbol", help="Override symbol")
     backtest_parser.add_argument("--interval", help="Override interval")
     backtest_parser.add_argument("--bins", type=int, default=10, help="Number of quantiles")
-    backtest_parser.add_argument("--quantile", type=int, help="Target quantile to trade")
+    backtest_parser.add_argument(
+        "--quantile",
+        type=int,
+        help="Quantile threshold (long uses >=, short uses <=)",
+    )
     backtest_parser.add_argument(
         "--side",
         choices=["auto", "long", "short", "longshort"],
@@ -96,9 +106,17 @@ def main():
         all_symbols = False
 
     scope_symbol = "ALL" if all_symbols else target_symbol
+    bar_type = resolve_bar_type(config)
     paths = resolve_paths(config, scope_symbol, interval)
+    bar_id = paths["bar_id"]
 
     print(f"Interval: {interval}")
+    if bar_type == "volume":
+        volume_size = config.get("volume_bar_size")
+        print(f"Bar type: volume (size={volume_size})")
+        print(f"Bar label: {bar_id}")
+    else:
+        print("Bar type: time")
     if args.command in ("features", "train"):
         if all_symbols:
             print(f"Train Symbols: ALL ({', '.join(train_symbols)})")
@@ -126,6 +144,7 @@ def main():
             interval,
             paths,
             retrain=args.retrain,
+            boost_rounds=args.boost_rounds,
             continue_rounds=args.continue_rounds,
         )
     elif args.command == "evaluate":

@@ -1,10 +1,20 @@
 import numpy as np
 import pandas as pd
 
-from src.utils import get_date_key, get_symbol_key
+from src.utils import get_date_key, get_symbol_key, interval_to_minutes
 
 
-def engineer_features(df, feature_flags=None):
+def _resolve_group_key(index, interval, bar_type):
+    if bar_type == "volume":
+        return get_symbol_key(index)
+    interval_minutes = interval_to_minutes(interval)
+    if interval_minutes < 1440:
+        date_key = get_date_key(index)
+        return [get_symbol_key(index), date_key]
+    return get_symbol_key(index)
+
+
+def engineer_features(df, interval="1m", bar_type="time", feature_flags=None):
     symbol_key = get_symbol_key(df.index)
     symbol_count = pd.Index(symbol_key).nunique()
     print(f"Engineering features: {len(df)} rows across {symbol_count} symbol(s).")
@@ -12,8 +22,8 @@ def engineer_features(df, feature_flags=None):
 
     # Use 'close' and 'open' from the downloaded data
     # In download_data.py, columns are lowercase: 'open', 'high', 'low', 'close', 'volume'
-    # Ret1min = Close(t) / Open(t) - 1
-    # RetKmin = Close(t) / Open(t-k+1) - 1
+    # Ret1bar = Close(t) / Open(t) - 1
+    # RetKbar = Close(t) / Open(t-k+1) - 1
 
     feature_flags = feature_flags or {}
     required = {"open", "high", "low", "close", "volume"}
@@ -21,8 +31,7 @@ def engineer_features(df, feature_flags=None):
     if missing:
         raise ValueError(f"Dataframe missing columns: {sorted(missing)}")
 
-    date_key = get_date_key(df.index)
-    group_key = [symbol_key, date_key]
+    group_key = _resolve_group_key(df.index, interval, bar_type)
 
     open_ = df["open"]
     high = df["high"]
@@ -30,15 +39,15 @@ def engineer_features(df, feature_flags=None):
     close = df["close"]
     volume = df["volume"]
 
-    # Feature 1: 1-minute return (intraday)
-    data["ret1min"] = close.div(open_).sub(1)
+    # Feature 1: 1-bar return (intraday)
+    data["ret1bar"] = close.div(open_).sub(1)
 
     if feature_flags.get("returns", True):
-        # Features 2-10: Multi-minute returns ending at current bar
+        # Features 2-10: Multi-bar returns ending at current bar
         for t in range(2, 11):
             # Align shifts within each day to avoid crossing day boundaries.
             shifted_open = open_.groupby(group_key).shift(t - 1)
-            data[f"ret{t}min"] = close.div(shifted_open).sub(1)
+            data[f"ret{t}bar"] = close.div(shifted_open).sub(1)
 
     # Technical/volume-derived features (TA-Lib-like, OHLCV only)
     tp = (high + low + close).div(3)
@@ -170,22 +179,29 @@ def engineer_features(df, feature_flags=None):
         )
         data["natr"] = atr.div(close).mul(100)
 
+    if feature_flags.get("alpha054", True):
+        denom_alpha054 = low.sub(high).replace(0, -0.0001).mul(close.pow(5))
+        data["alpha054"] = (
+            low.sub(close)
+            .mul(open_.pow(5))
+            .mul(-1)
+            .div(denom_alpha054)
+        )
+
     return data
 
 
-def prepare_target(df, data, feature_flags=None):
-    # Target: 1-minute forward return
+def prepare_target(df, data, interval="1m", bar_type="time", feature_flags=None):
+    # Target: 1-bar forward return
     # According to the book/notebook logic:
-    # "aim predict the 1-min forward return"
+    # "aim predict the 1-bar forward return"
     # "assume throughout that we can always buy (sell) at the first (last) trade price for a given bar"
     # This usually means entering at Open(t+1) and exiting at Close(t+1).
     # The return for that trade is (Close(t+1) / Open(t+1)) - 1.
-    # This corresponds to 'ret1min' shifted by -1.
+    # This corresponds to 'ret1bar' shifted by -1.
 
-    date_key = get_date_key(df.index)
-    symbol_key = get_symbol_key(df.index)
-    group_key = [symbol_key, date_key]
-    data["fwd1min"] = data["ret1min"].groupby(group_key).shift(-1)
+    group_key = _resolve_group_key(df.index, interval, bar_type)
+    data["fwd1bar"] = data["ret1bar"].groupby(group_key).shift(-1)
 
     feature_flags = feature_flags or {}
     if not feature_flags.get("returns", True):

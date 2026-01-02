@@ -4,12 +4,19 @@ import shutil
 import pandas as pd
 
 from src.backtest import backtest
+from src.bars import build_volume_bars
 from src.config_io import resolve_prediction_paths
 from src.data_io import load_data, load_data_multi, load_frame, save_frame, select_symbol
 from src.evaluation import evaluate_predictions
 from src.features import engineer_features, prepare_target
 from src.modeling import train_and_predict
-from src.utils import get_symbol_key, get_train_symbols, resolve_feature_flags, resolve_quantile_scope
+from src.utils import (
+    get_symbol_key,
+    get_train_symbols,
+    resolve_bar_type,
+    resolve_feature_flags,
+    resolve_quantile_scope,
+)
 
 
 def run_download(config_path, symbols_override=None):
@@ -36,9 +43,29 @@ def run_features(config, symbol, interval, paths, recompute=False, all_symbols=F
     if df is None:
         return None
 
+    bar_type = resolve_bar_type(config)
+    if bar_type == "volume":
+        volume_size = config.get("volume_bar_size")
+        print(f"Building volume bars (size={volume_size})...")
+        df = build_volume_bars(df, volume_size)
+        if df is None or df.empty:
+            print("No volume bars generated.")
+            return None
+
     feature_flags = resolve_feature_flags(config)
-    features_df = engineer_features(df, feature_flags=feature_flags)
-    model_data = prepare_target(df, features_df, feature_flags=feature_flags)
+    features_df = engineer_features(
+        df,
+        interval=interval,
+        bar_type=bar_type,
+        feature_flags=feature_flags,
+    )
+    model_data = prepare_target(
+        df,
+        features_df,
+        interval=interval,
+        bar_type=bar_type,
+        feature_flags=feature_flags,
+    )
     save_frame(model_data, features_path)
     print(f"Saved features: {features_path} ({len(model_data)} rows)")
     return features_path
@@ -63,7 +90,7 @@ def load_predictions_for_symbol(config, target_symbol, interval):
     return predictions, paths
 
 
-def run_train(config, symbol, interval, paths, retrain=False, continue_rounds=50):
+def run_train(config, symbol, interval, paths, retrain=False, boost_rounds=250, continue_rounds=50):
     features_path = paths["features_path"]
     predictions_path = paths["predictions_path"]
     model_dir = paths["model_dir"]
@@ -98,8 +125,12 @@ def run_train(config, symbol, interval, paths, retrain=False, continue_rounds=50
     print(f"Loading features from {features_path}...")
     model_data = load_frame(features_path)
     resume = bool(existing_models) and not retrain
+    bar_type = resolve_bar_type(config)
     predictions = train_and_predict(
         model_data,
+        interval=interval,
+        bar_type=bar_type,
+        boost_rounds=boost_rounds,
         model_dir=model_dir,
         resume=resume,
         continue_rounds=continue_rounds,
@@ -120,7 +151,13 @@ def run_evaluate(config, target_symbol, interval, bins=10, quantile_scope="auto"
         return
 
     symbol_count = pd.Index(get_symbol_key(predictions.index)).nunique()
-    scope_used = resolve_quantile_scope(quantile_scope, symbol_count)
+    bar_type = resolve_bar_type(config)
+    scope_used = resolve_quantile_scope(
+        quantile_scope,
+        symbol_count,
+        interval=interval,
+        bar_type=bar_type,
+    )
     plot_path = os.path.join(
         paths["eval_dir"],
         f"{os.path.basename(paths['predictions_path']).replace('_predictions.feather', '')}"
@@ -131,6 +168,8 @@ def run_evaluate(config, target_symbol, interval, bins=10, quantile_scope="auto"
         bins=bins,
         quantile_scope=scope_used,
         plot_path=plot_path,
+        interval=interval,
+        bar_type=bar_type,
     )
     if summary is None:
         return
@@ -162,7 +201,13 @@ def run_backtest(
         return
 
     symbol_count = pd.Index(get_symbol_key(predictions.index)).nunique()
-    scope_used = resolve_quantile_scope(quantile_scope, symbol_count)
+    bar_type = resolve_bar_type(config)
+    scope_used = resolve_quantile_scope(
+        quantile_scope,
+        symbol_count,
+        interval=interval,
+        bar_type=bar_type,
+    )
     base_name = os.path.basename(paths["predictions_path"]).replace("_predictions.feather", "")
     if quantile is None:
         rule_tag = "top_bottom"
@@ -174,7 +219,7 @@ def run_backtest(
 
     plot_path = os.path.join("plot", f"{base_name}_equity_{rule_tag}_{bins}_{scope_used}.png")
     alpha_plot_path = os.path.join("plot", f"{base_name}_alpha_{rule_tag}_{bins}_{scope_used}.png")
-    plot_label = f"{target_symbol} {interval}"
+    plot_label = f"{target_symbol} {paths['bar_id']}"
 
     backtest(
         predictions,
@@ -183,6 +228,8 @@ def run_backtest(
         target_quantile=quantile,
         side=side,
         quantile_scope=quantile_scope,
+        interval=interval,
+        bar_type=bar_type,
         plot_path=plot_path,
         plot_label=plot_label,
         alpha_plot_path=alpha_plot_path,

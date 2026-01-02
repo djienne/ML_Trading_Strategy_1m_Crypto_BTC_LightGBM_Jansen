@@ -7,7 +7,7 @@ from scipy.stats import spearmanr
 from src.utils import assign_decile, get_symbol_key, get_time_index, resolve_quantile_scope
 
 
-def add_quantile_labels(predictions, bins=10, scope="auto"):
+def add_quantile_labels(predictions, bins=10, scope="auto", interval=None, bar_type=None):
     predictions = predictions.copy()
     predictions = predictions.dropna(subset=["target", "prediction"])
     if predictions.empty:
@@ -24,7 +24,7 @@ def add_quantile_labels(predictions, bins=10, scope="auto"):
     predictions["timestamp"] = time_index
     predictions["symbol"] = symbol_index
 
-    scope = resolve_quantile_scope(scope, symbol_count)
+    scope = resolve_quantile_scope(scope, symbol_count, interval=interval, bar_type=bar_type)
     if scope == "global":
         predictions["quantile"] = assign_decile(predictions["prediction"], bins=bins)
         return predictions.sort_values(["symbol", "timestamp"])
@@ -59,7 +59,7 @@ def plot_quantile_performance(returns_by_quantile, returns_filled, bins, output_
 
     fig, axes = plt.subplots(ncols=2, figsize=(12, 4))
     avg_returns.mul(10000).plot(kind="bar", ax=axes[0])
-    axes[0].set_title("Avg 1-min Return by Quantile")
+    axes[0].set_title("Avg 1-bar Return by Quantile")
     axes[0].set_ylabel("Return (bps)")
     axes[0].set_xlabel("Quantile")
 
@@ -75,12 +75,30 @@ def plot_quantile_performance(returns_by_quantile, returns_filled, bins, output_
     plt.close(fig)
 
 
-def evaluate_predictions(predictions, bins=10, quantile_scope="auto", plot_path=None):
+def evaluate_predictions(
+    predictions,
+    bins=10,
+    quantile_scope="auto",
+    plot_path=None,
+    interval=None,
+    bar_type=None,
+):
     print("\nEvaluating prediction performance...")
     symbol_count = pd.Index(get_symbol_key(predictions.index)).nunique()
-    scope_used = resolve_quantile_scope(quantile_scope, symbol_count)
+    scope_used = resolve_quantile_scope(
+        quantile_scope,
+        symbol_count,
+        interval=interval,
+        bar_type=bar_type,
+    )
     print(f"Predictions input: {len(predictions)} rows across {symbol_count} symbol(s).")
-    predictions = add_quantile_labels(predictions, bins=bins, scope=scope_used)
+    predictions = add_quantile_labels(
+        predictions,
+        bins=bins,
+        scope=scope_used,
+        interval=interval,
+        bar_type=bar_type,
+    )
     if predictions.empty:
         print("No valid predictions to evaluate.")
         return None
@@ -93,7 +111,7 @@ def evaluate_predictions(predictions, bins=10, quantile_scope="auto", plot_path=
     if symbol_count_effective < 2 or scope_used != "timestamp":
         ic_mean = 0.0
         ic_median = 0.0
-        print("IC by minute skipped (requires >=2 symbols with timestamp scope).")
+        print("IC by bar skipped (requires >=2 symbols with timestamp scope).")
     else:
         by_minute = predictions.groupby("timestamp")
         ic_by_minute = by_minute.apply(lambda x: spearmanr(x["target"], x["prediction"])[0])
@@ -109,7 +127,7 @@ def evaluate_predictions(predictions, bins=10, quantile_scope="auto", plot_path=
 
     print(f"Quantile scope: {scope_used} (bins={bins})")
     print(f"IC (overall): {ic:.4%}")
-    print(f"IC by minute: mean={ic_mean:.4%} median={ic_median:.4%}")
+    print(f"IC by bar: mean={ic_mean:.4%} median={ic_median:.4%}")
     print("\nAverage return by quantile:")
     print(avg_returns.apply(lambda x: f"{x:.4%}").to_string())
     print("\nCumulative return by quantile:")
