@@ -2,7 +2,7 @@
 
 This repo implements a modular ML trading strategy workflow inspired by the Chapter 12 of "Machine Learning for Algorithmic Trading" by Stefan Jansen. The pipeline is split into independent stages so you can run only what you need: download data, build features, train models (with persistence), evaluate signals, and backtest a chosen quantile.
 
-As shown in the book, it works for 1 minute candles for example. But profitability is only realistic with very low fees (below 0.5 bps); this is generally not achievable for taker trading, but the short-term 1-min signal could be used, for example, as alpha for a high frequency market-making model that relies on limit maker orders (very low fees, sometimes rebates).
+The pipeline supports any candle interval shorter than 1 month (e.g., 1m, 5m, 1h, 1d). The examples and defaults in this README focus on 1-minute candles. For short timeframes (e.g., 1m/5m), profitability is only realistic with very low fees (below 0.5 bps); this is generally not achievable for taker trading, but the short-term signal could be used, for example, as alpha for a high frequency market-making model that relies on limit maker orders (very low fees, sometimes rebates).
 
 <figure>
   <img src="plot/ALL_1m_equity_q5000_longshort_5000_date.png" alt="ALL 1m equity curve (q5000 longshort, date scope)" width="700">
@@ -214,6 +214,7 @@ When training on multiple symbols, `{symbol}` is `ALL` for the features, predict
 ## Notes
 
 - The pipeline supports multi-symbol training and single-symbol evaluation/backtest by design; use `train_symbols` for the training set and `inference_symbol` (or `--symbol`) for evaluation/backtest.
+- Candle intervals shorter than 1 month are supported; the README examples assume `1m`.
 - Quantile assignment defaults to `timestamp` for multi-symbol data, `date` for intraday single-symbol data, and `global` for daily+ or volume-bar single-symbol data; override with `--quantile-scope` if needed.
 - The backtest is a vectorized approximation meant for quick signal sanity checks, not a full execution-quality simulation.
 - The backtest alpha factor is a 1-day rolling z-score of the trading signal per symbol (min 60 minutes, both scaled to bars), scaled by 0.01 and averaged by timestamp for plotting.
